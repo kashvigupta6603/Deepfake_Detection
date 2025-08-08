@@ -10,7 +10,6 @@ from d_voice import run_voice_analysis_streamlit
 from d_image import MesoNet
 
 # ========== Config ==========
-REF_IMAGE = "gujju.jpg"
 MESO_MODEL = "meso4.h5"
 REF_AUDIO = "reference.wav"
 TEST_AUDIO = "test_audio.wav"
@@ -21,20 +20,9 @@ FRAME_SKIP = 5
 # ========== Load Model ==========
 meso = MesoNet(model_path=MESO_MODEL)
 
-# ========== Load Reference Face ==========
-try:
-    ref_img = face_recognition.load_image_file(REF_IMAGE)
-    ref_encodings = face_recognition.face_encodings(ref_img)
-    if not ref_encodings:
-        raise ValueError("No face found in reference image.")
-    ref_enc = ref_encodings[0]
-except Exception as e:
-    st.error(f"❌ Error loading reference image: {e}")
-    st.stop()
-
 # ========== Audio Recorder ==========
 def record_audio(filename, duration=AUDIO_DURATION):
-    st.info(f"🎙️ Recording for {duration} seconds...")
+    st.info(f"🎙 Recording for {duration} seconds...")
     audio = sd.rec(int(duration * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1)
     sd.wait()
     write(filename, SAMPLE_RATE, audio)
@@ -47,8 +35,7 @@ st.set_page_config(page_title="Deepfake Detection Suite", layout="wide", page_ic
 theme = st.sidebar.radio("🌗 Theme Mode", ["🌞 Light Mode", "🌙 Dark Mode"])
 
 if theme == "🌙 Dark Mode":
-    st.markdown(
-        """
+    st.markdown("""
         <style>
             html, body, .main {
                 background-color: #0E1117 !important;
@@ -62,15 +49,11 @@ if theme == "🌙 Dark Mode":
                 background-color: #1E1E1E;
             }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
+    """, unsafe_allow_html=True)
 else:
-    st.markdown(
-        """
+    st.markdown("""
         <style>
-            html, body, .main {
+            html, body, .main, .block-container, .css-18e3th9 {
                 background-color: white !important;
                 color: black !important;
             }
@@ -81,10 +64,16 @@ else:
             .stFileUploader {
                 background-color: #ffffff;
             }
+            .stAlert, .stAlert > div {
+                background-color: inherit !important;
+                color: black !important;
+            }
+            .stAlert .css-1w0z1zr {
+                color: black !important;
+            }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    """, unsafe_allow_html=True)
+
 
 
 # ========== Page Title ==========
@@ -92,7 +81,7 @@ st.markdown("<h1 style='text-align: center;'>🧠 FAUXSHIELD</h1>", unsafe_allow
 st.markdown("<hr style='border:1px solid gray'>", unsafe_allow_html=True)
 
 # ========== VOICE AUTHENTICATION ==========
-st.subheader("🎙️ Voice Authentication & Deepfake Detection")
+st.subheader("🎙 Voice Authentication & Deepfake Detection")
 st.caption("Upload a reference voice or record live test voice to check authenticity.")
 
 with st.container():
@@ -107,12 +96,12 @@ with st.container():
             st.success("✅ Reference voice uploaded successfully.")
 
     with col2:
-        if st.button("🎙️ Record Test Voice"):
+        if st.button("🎙 Record Test Voice"):
             record_audio(TEST_AUDIO)
         if os.path.exists(TEST_AUDIO):
             st.audio(TEST_AUDIO, format="audio/wav")
 
-# ========== Run Analysis ==========
+# ========== Run Voice Analysis ==========
 if os.path.exists(REF_AUDIO) and os.path.exists(TEST_AUDIO):
     if st.button("🚀 Run Voice Analysis"):
         with st.spinner("Analyzing voice sample..."):
@@ -120,39 +109,62 @@ if os.path.exists(REF_AUDIO) and os.path.exists(TEST_AUDIO):
 
         st.progress(min(int(similarity * 100), 100), text="🔍 Similarity Score")
 
-        st.markdown(f"**🧠 Cosine Similarity:** `{similarity:.4f}`")
-        st.markdown(f"**🎵 ZCR Score (Heuristic):** `{zcr_score:.4f}`")
+        st.markdown(f"🧠 Cosine Similarity:** {similarity:.4f}")
+        st.markdown(f"🎵 ZCR Score (Heuristic):** {zcr_score:.4f}")
 
         if match and not is_fake:
             st.success("✅ Real speaker matched. Voice is authentic.")
         elif not match and not is_fake:
-           st.warning("⚠️ Unknown speaker, but sounds human.")
+            st.warning("⚠ Unknown speaker, but sounds human.")
         elif match and is_fake:
-            st.warning("⚠️ Voice matches speaker, but may be synthetically altered.")
+            st.warning("⚠ Voice matches speaker, but may be synthetically altered.")
         else:
             st.error("🚨 Likely deepfake or impersonation detected.")
 
 st.markdown("<hr style='border:1px dashed gray'>", unsafe_allow_html=True)
 
 # ========== IMAGE MONITORING ==========
-st.subheader("🖥️ Screen-Based Face Monitoring & Deepfake Detection")
+st.subheader("🖥 Screen-Based Face Monitoring & Deepfake Detection")
 st.caption("Analyzes your live screen (e.g. Google Meet) to detect deepfake faces.")
 
-# Persistent state
+uploaded_ref_image = st.file_uploader("📸 Upload Reference Face Image (JPG, PNG)", type=["jpg", "jpeg", "png"])
+ref_enc = None
+
+if uploaded_ref_image is not None:
+    try:
+        img_bytes = uploaded_ref_image.read()
+        with open("uploaded_ref.jpg", "wb") as f:
+            f.write(img_bytes)
+
+        ref_img = face_recognition.load_image_file("uploaded_ref.jpg")
+        ref_encodings = face_recognition.face_encodings(ref_img)
+
+        if not ref_encodings:
+            st.error("❌ No face found in uploaded reference image.")
+        else:
+            ref_enc = ref_encodings[0]
+            st.success("✅ Reference face image uploaded.")
+    except Exception as e:
+        st.error(f"❌ Error loading image: {e}")
+else:
+    st.warning("⚠ Please upload a reference image to enable face authentication.")
+
+# ========== Detection Control ==========
 if "detection_running" not in st.session_state:
     st.session_state.detection_running = False
 
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("▶️ Start Face Detection"):
+    if st.button("▶ Start Face Detection"):
         st.session_state.detection_running = True
 with col2:
-    if st.button("⏹️ Stop Face Detection"):
+    if st.button("⏹ Stop Face Detection"):
         st.session_state.detection_running = False
 
 placeholder = st.empty()
 
-if st.session_state.detection_running:
+# ========== Face Detection ==========
+if st.session_state.detection_running and ref_enc is not None:
     with mss.mss() as sct:
         monitor = sct.monitors[1]
         frame_count = 0
@@ -164,6 +176,7 @@ if st.session_state.detection_running:
             if frame_count % FRAME_SKIP == 0:
                 face_locs = face_recognition.face_locations(rgb_frame)
                 face_encs = face_recognition.face_encodings(rgb_frame, face_locs)
+
 
                 for (top, right, bottom, left), enc in zip(face_locs, face_encs):
                     matched = face_recognition.compare_faces([ref_enc], enc, tolerance=0.6)[0]
@@ -183,9 +196,10 @@ if st.session_state.detection_running:
 
                     st.info(result)
 
+
             placeholder.image(frame, channels="BGR", use_container_width=True)
             frame_count += 1
 
 # ========== Footer ==========
 st.markdown("<hr>", unsafe_allow_html=True)
-st.caption("🛡️ Made with 💡 by YourName | Powered by SpeechBrain, FaceNet, and MesoNet.")
+st.caption("🛡 Made with 💡 Gurjot Kaur, Kashvi Gupta | Powered by SpeechBrain, FaceNet, and MesoNet.")
